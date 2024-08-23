@@ -1,0 +1,13 @@
+1 LM7805
+1 LM1117
+3 28byj-48 motor de passo
+3 ULN2003 driver de motor de passo 12p
+1 DS3231 RTC module 2p
+1 microcontrolador :)
+1 fonte de 12V
+1 conector P4
+1 diodo
+3 push button 3p
+1 buzzer 1p
+eeeprom
+3 resistor 10k
