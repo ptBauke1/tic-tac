@@ -11,3 +11,4 @@
 1 buzzer 1p
 eeeprom
 3 resistor 10k
+:)
