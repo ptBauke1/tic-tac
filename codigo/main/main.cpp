@@ -5,6 +5,8 @@
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 
+// 2048 - 1 revolution
+
 typedef struct {
     int16_t position;
     uint64_t step_delay_us;
@@ -28,12 +30,12 @@ typedef enum {
 
 stepper_t stepper;
 const uint8_t stepper_pin_1A = 5;
-const uint8_t stepper_pin_1B = 6;
-const uint8_t stepper_pin_2A = 7;
+const uint8_t stepper_pin_1B = 7;
+const uint8_t stepper_pin_2A = 6;
 const uint8_t stepper_pin_2B = 8;
-const uint16_t stepper_steps_per_revolution = 200;
-const stepper_mode_t stepping_mode = single;
-uint8_t speed = 20;
+const uint16_t stepper_steps_per_revolution = 64;
+const stepper_mode_t stepping_mode = power;
+uint8_t speed = 50;
 
 void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B,
                   uint8_t pin_2A, uint8_t pin_2B,
@@ -126,27 +128,10 @@ int main() {
 
     while(1) {
         // Rotate 3/4 of a turn.
-        stepper_rotate_degrees(&stepper, 270);
-        sleep_ms(500);
-
-        // Now rotate these many steps in the oposite direction
-        stepper_rotate_steps(&stepper, -45);
-        sleep_ms(500);
-
-        // Increase the speed and rotate 360 degrees
-        speed = 50;
-        stepper_set_speed_rpm(&stepper, speed);
-        stepper_rotate_degrees(&stepper, 360);
-
-        // Release the coils and sleep for a while. You can check that
-        // the coils are not energised by moving the rotor manually:
-        // there should be little resistance.
-        stepper_release(&stepper);
-        sleep_ms(4000);
-
-        // Decrease the speed
-        speed = 15;
-        stepper_set_speed_rpm(&stepper, speed);
+        stepper_rotate_steps(&stepper, 2048);
+        sleep_ms(2000);
+        stepper_rotate_steps(&stepper, -2048);
+        sleep_ms(2000);
     }
     return 0;
 }
