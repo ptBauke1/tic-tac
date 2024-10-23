@@ -1,10 +1,10 @@
 #include <stdio.h>
 #include "pico/stdlib.h"
 
-#include "pico/stdlib.h"
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
-
+#include "pico/util/datetime.h"
+#include "hardware/rtc.h"
 // 2048 - 1 revolution
 
 typedef struct {
@@ -25,8 +25,6 @@ typedef enum {
     forward = 1,
     backward = -1
 } stepper_direction_t;
-
-
 
 stepper_t stepper;
 const uint8_t stepper_pin_1A = 5;
@@ -118,20 +116,37 @@ void stepper_rotate_degrees(stepper_t *s, float degrees) {
     stepper_rotate_steps(s, steps);
 }
 
+
 int main() {
     stdio_init_all();
 
-    stepper_init(&stepper, stepper_pin_1A, stepper_pin_1B,
-                 stepper_pin_2A, stepper_pin_2B,
-                 stepper_steps_per_revolution, stepping_mode);
-    stepper_set_speed_rpm(&stepper, speed);
+    char datetime_buf[256];
+    char *datetime_str = &datetime_buf[0];
 
-    while(1) {
-        // Rotate 3/4 of a turn.
-        stepper_rotate_steps(&stepper, 2048);
-        sleep_ms(2000);
-        stepper_rotate_steps(&stepper, -2048);
-        sleep_ms(2000);
+    // Start on Friday 5th of June 2020 15:45:00
+    datetime_t t = {
+            .year  = 2024,
+            .month = 10,
+            .day   = 23,
+            .dotw  = 3, // 0 is Sunday, so 5 is Friday
+            .hour  = 17,
+            .min   = 47,
+            .sec   = 00
+    };
+
+    // Start the RTC
+    rtc_init();
+    rtc_set_datetime(&t);
+
+    // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
+    // The delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
+    sleep_us(64);
+
+    // Print the time
+    while (true) {
+        rtc_get_datetime(&t);
+        datetime_to_str(datetime_str, sizeof(datetime_buf), &t);
+        printf("\r%s\n", datetime_str);
+        sleep_ms(100);
     }
-    return 0;
 }
