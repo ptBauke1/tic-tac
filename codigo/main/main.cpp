@@ -5,7 +5,13 @@
 #include "hardware/timer.h"
 #include "pico/util/datetime.h"
 #include "hardware/rtc.h"
-// 2048 - 1 revolution
+
+#define STEPS_PER_REV 2048
+#define STEPPER_DELAY 1400 // Speed of the displays, higher = slower
+#define UPLOAD_OFFSET 5 // If the clock runs slow by a few seconds, increase this value
+#define POLLING_DELAY 50 
+#define ENDSTOP_DEBOUNCE_READS 3 // Number of repeated endstop reads during homing
+
 
 typedef struct {
     int16_t position;
@@ -26,22 +32,131 @@ typedef enum {
     backward = -1
 } stepper_direction_t;
 
-stepper_t stepper;
-const uint8_t stepper_pin_1A = 5;
-const uint8_t stepper_pin_1B = 7;
-const uint8_t stepper_pin_2A = 6;
-const uint8_t stepper_pin_2B = 8;
-const uint16_t stepper_steps_per_revolution = 64;
+stepper_t stepper_hour;
+stepper_t stepper_dec;
+stepper_t stepper_uni;
+
+const byte stepper_pins[][4] = {{5,7,6,8}, {9,11,10,12},{13,15,14,16}}; // [[hour] , [dec], [uni]]
+const byte endstop_pins[] = {21,20,20};
 const stepper_mode_t stepping_mode = power;
 uint8_t speed = 50;
 
-void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B,
-                  uint8_t pin_2A, uint8_t pin_2B,
-                  uint16_t steps_per_revolution,
-                  stepper_mode_t stepping_mode) {
+const byte starting_digits[] = {0, 0, 9};
+const unsigned int starting_offset[] = {110, 80, 265}; //// Starting offset should be increased until the top flap touches the front stop.
+
+unsigned int stepper_pos[] = {0,0,0}; // Position in steps of each stepper
+byte drive_step[] = {0, 0, 0}; // Current drive step for each stepper - 0 to 7 for half-stepping
+
+void e_stop(){
+    abort();
+}
+
+void disable_stepper(const bythe stepper_num){
+    gpio_put(stepper_pins[stepper_num][0], LOW);
+    gpio_put(stepper_pins[stepper_num][1], LOW);
+    gpio_put(stepper_pins[stepper_num][2], LOW);
+    gpio_put(stepper_pins[stepper_num][3], LOW);
+}
+
+void half_step(const byte stepper_num){
+    const byte pos = drive_step[stepper_num];
+    gpio_put(stepper_pins[stepper_num][0], pos < 3);
+    gpio_put(stepper_pins[stepper_num][1], ((pos + 6) % 8) < 3);
+    gpio_put(stepper_pins[stepper_num][2], ((pos + 4) % 8) < 3);
+    gpio_put(stepper_pins[stepper_num][3], ((pos + 2) % 8) < 3);
+    drive_step[stepper_num] = (pos + 1) % 8;
+}
+
+void step_num(const byte stepper_num, unsigned int steps, const unsigned int wait){
+    stepper_pos[stepper_num] = (stepper_pos[stepper_num] + steps) % STEPS_PER_REV;
+    while(steps > 0) {
+        half_step(stepper_num);
+        steps--;  
+        delayMicroseconds(wait);
+  }
+}
+
+void step_to_home(const byte stepper_num, const unsigned int wait) {  
+  unsigned int total_steps = 0;
+  byte endstop_repeats = 0;
+  
+  // Step until endstop reads low ENDSTOP_DEBOUNCE_READS times in a row
+  while(endstop_repeats < ENDSTOP_DEBOUNCE_READS) {
+    endstop_repeats = digitalRead(endstop_pins[stepper_num]) == LOW ? endstop_repeats + 1 : 0;
+    
+    half_step(stepper_num);    
+    total_steps++;
+    if(total_steps > STEPS_PER_REV * 2u) {
+      disable_stepper(stepper_num);
+      e_stop();
+    } 
+    delayMicroseconds(wait);
+  }
+  endstop_repeats = 0;
+  
+  // Step until endstop reads high ENDSTOP_DEBOUNCE_READS times in a row
+  while(endstop_repeats < ENDSTOP_DEBOUNCE_READS) {
+    endstop_repeats = digitalRead(endstop_pins[stepper_num]) == HIGH ? endstop_repeats + 1 : 0;
+    
+    half_step(stepper_num);
+    total_steps++;
+    if(total_steps > STEPS_PER_REV * 2u) {
+      disable_stepper(stepper_num);
+      e_stop();
+    }
+    delayMicroseconds(wait);
+  }
+
+  stepper_pos[stepper_num] = 0; 
+}
+
+void step_to_position(const byte stepper_num, unsigned int target_pos, const unsigned int wait) {
+  if (target_pos == stepper_pos[stepper_num]) {
+    return;
+  }
+
+  // Limit target position to between 0 and STEPS_PER_REV-1
+  target_pos %= STEPS_PER_REV;
+  
+  if (target_pos < stepper_pos[stepper_num]) {
+    step_to_home(stepper_num, wait);
+    step_num(stepper_num, target_pos, wait);
+  } else {
+    step_num(stepper_num, target_pos - stepper_pos[stepper_num], wait);
+  }
+}
+
+void step_to_digit(const byte stepper_num, const byte digit, const unsigned int wait) {
+  // The ones display has 10 flaps, the others have 12 flaps
+  const byte num_flaps = (stepper_num == 2) ? 10 : 12;
+  
+  const byte num_digits = (stepper_num == 0) ? 12 : (stepper_num == 1) ? 6 : 10;
+
+  const unsigned int target_pos = starting_offset[stepper_num] + (unsigned int)((num_digits + digit - starting_digits[stepper_num]) % num_digits) * STEPS_PER_REV/num_flaps;
+  
+  // The tens display has 2 full sets of digits, so we'll need to step to the closest target digit.
+  if(stepper_num == 1) {
+    // The repeated digit is offset by a half-rotation from the first target.
+    const unsigned int second_target = target_pos + STEPS_PER_REV/2;
+
+    // If the current position is between the two target positions, step to the second target position, as it's the closest given that we can't step backwards.
+    // Otherwise, step to the first target position.
+    if(stepper_pos[stepper_num] > target_pos && stepper_pos[stepper_num] <= second_target) {
+      step_to_position(stepper_num, second_target, wait);
+    } else {
+      step_to_position(stepper_num, target_pos, wait);
+    }
+  } else {
+    // The ones and hour displays only have a single set of digits, so simply step to the target position.
+    step_to_position(stepper_num, target_pos, wait);
+  }
+  
+  disable_stepper(stepper_num);
+}
+
+void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B, uint8_t pin_2A, uint8_t pin_2B, uint16_t steps_per_revolution, stepper_mode_t stepping_mode) {
     // Initialise GPIO. Use a bitmask to manipulate all pins at the same time.
-    s->gpio_mask = (1 << pin_1A) | (1 << pin_1B) |
-                   (1 << pin_2A) | (1 << pin_2B);
+    s->gpio_mask = (1 << pin_1A) | (1 << pin_1B) | (1 << pin_2A) | (1 << pin_2B);
     gpio_init_mask(s->gpio_mask);
     gpio_set_dir_out_masked(s->gpio_mask);
 
@@ -137,6 +252,41 @@ int main() {
     // Start the RTC
     rtc_init();
     rtc_set_datetime(&t);
+    
+    for (int i = 0; i < 3; i++){
+        gpio_init(endstop_pins[i]);
+        gpio_set_dir(endstop_pins[i], INPUT);
+    }
+    
+    stepper_init(stepper_hour, stepper_pins[0][0], stepper_pins[0][1], stepper_pins[0][2], stepper_pins[0][3], STEPS_PER_REV, stepping_mode) 
+    stepper_init(stepper_dec, stepper_pins[1][0], stepper_pins[1][1], stepper_pins[1][2], stepper_pins[1][3], STEPS_PER_REV, stepping_mode) 
+    stepper_init(stepper_uni, stepper_pins[2][0], stepper_pins[2][1], stepper_pins[2][2], stepper_pins[2][3], STEPS_PER_REV, stepping_mode) 
+    
+    unsigned int total_steps = 0;
+    if(endstop_pins[1] == endstop_pins[2]) {
+        while(digitalRead(endstop_pins[1]) == LOW) {
+            step_num(1, 200, STEPPER_DELAY);
+            disable_stepper(1);
+
+      // Still pressed, try the other display
+            if(digitalRead(endstop_pins[1]) == LOW) {
+                step_num(2, 200, STEPPER_DELAY);  
+                disable_stepper(2);
+            }
+
+            // Similar to homing, if a max number of steps is reached, the endstop is assumed to have failed and the program aborts.
+            total_steps += 200;
+            if(total_steps > STEPS_PER_REV) {
+                e_stop();
+            }
+        }
+    }
+    step_to_home(2, STEPPER_DELAY);
+    step_to_digit(2, starting_digits[2], STEPPER_DELAY);
+    step_to_home(1, STEPPER_DELAY);
+    step_to_digit(1, starting_digits[1], STEPPER_DELAY);
+    step_to_home(0, STEPPER_DELAY);
+    step_to_digit(0, starting_digits[0], STEPPER_DELAY);
 
     // clk_sys is >2000x faster than clk_rtc, so datetime is not updated immediately when rtc_get_datetime() is called.
     // The delay is up to 3 RTC clock cycles (which is 64us with the default clock settings)
@@ -145,8 +295,12 @@ int main() {
     // Print the time
     while (true) {
         rtc_get_datetime(&t);
-        datetime_to_str(datetime_str, sizeof(datetime_buf), &t);
-        printf("\r%s\n", datetime_str);
-        sleep_ms(100);
+        uint8_t hr = t.hour;
+        uint8_t dec = static_cast < uint8_t > t.min / 10;
+        uint8_t uni = t.min % 10;
+
+        step_to_digit(2, ones, STEPPER_DELAY);
+        tep_to_digit(1, tens, STEPPER_DELAY);
+        step_to_digit(0, hr, STEPPER_DELAY);
     }
 }
