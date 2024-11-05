@@ -23,6 +23,9 @@ add_executable(${PROJECT_NAME}
 pico_add_extra_outputs(${PROJECT_NAME})
 
 add_library(Common INTERFACE)
+target_sources(Common INTERFACE
+  ${CMAKE_CURRENT_LIST_DIR}/src/stepper.cpp
+)
 
 target_include_directories(Common INTERFACE ${CMAKE_CURRENT_LIST_DIR}/include)
 
