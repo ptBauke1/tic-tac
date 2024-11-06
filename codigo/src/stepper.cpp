@@ -9,7 +9,7 @@
 void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B,
                   uint8_t pin_2A, uint8_t pin_2B,
                   uint16_t steps_per_revolution,
-                  stepper_mode_t stepping_mode, uint8_t endstop_pin) {
+                  stepper_mode_t stepping_mode, uint8_t endstop_pin, uint8_t index, stepper_direction_t direction) {
     // Initialise GPIO. Use a bitmask to manipulate all pins at the same time.
     s->gpio_mask = (1 << pin_1A) | (1 << pin_1B) |
                    (1 << pin_2A) | (1 << pin_2B);
@@ -46,9 +46,8 @@ void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B,
     s->position = 0;
     gpio_put_masked(s->gpio_mask, s->stepping_sequence[0]);
     s->endstop = endstop_pin;
-    gpio_init(s->endstop);
-    gpio_set_dir(s->endstop, GPIO_IN);
-
+    s->index = index;
+    s->direction = direction;
 }
 
 void stepper_set_speed_rpm(stepper_t *s, uint8_t rpm){
@@ -56,8 +55,8 @@ void stepper_set_speed_rpm(stepper_t *s, uint8_t rpm){
     s->step_delay_us = 6e7 / s->steps_per_revolution / rpm;
 }
 
-void stepper_step_once(stepper_t *s, stepper_direction_t direction) {
-    s->position += direction;
+void stepper_step_once(stepper_t *s) {
+    s->position += s->direction;
     if (s->position == s->steps_per_revolution) {
         s->position = 0;
     } else if (s->position < 0) {
@@ -79,7 +78,7 @@ void stepper_rotate_steps(stepper_t *s, int16_t steps) {
     }
     
     while (true) {
-        stepper_step_once(s, direction);
+        stepper_step_once(s);
         steps -= direction;
         if (steps == 0) break;
         busy_wait_us(s->step_delay_us);

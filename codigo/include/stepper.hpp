@@ -12,6 +12,11 @@
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 
+typedef enum {
+    forward = 1,
+    backward = -1
+} stepper_direction_t;
+
 typedef struct {
     int16_t position;
     uint64_t step_delay_us;
@@ -20,17 +25,14 @@ typedef struct {
     float step_angle;
     uint16_t steps_per_revolution;
     uint8_t endstop;
+    uint8_t index;
+    stepper_direction_t direction;
 } stepper_t;
 
 typedef enum {
     single,
     power
 } stepper_mode_t;
-
-typedef enum {
-    forward = 1,
-    backward = -1
-} stepper_direction_t;
 
 /*! \brief Initialise a stepper motor
  *
@@ -61,7 +63,7 @@ typedef enum {
 void stepper_init(stepper_t *s, uint8_t pin_1A, uint8_t pin_1B,
                   uint8_t pin_2A, uint8_t pin_2B,
                   uint16_t steps_per_revolution,
-                  stepper_mode_t stepping_mode, uint8_t endstop_pin);
+                  stepper_mode_t stepping_mode, uint8_t endstop_pin, uint8_t index, stepper_direction_t direction);
 
 
 /*! \brief Set motor speed in RPM
@@ -77,7 +79,7 @@ void stepper_set_speed_rpm(stepper_t *s, uint8_t rpm);
  *  \param s Pointer to a stepper_t structure
  *  \param direction Which direction to step, forward or backward
  */
-void stepper_step_once(stepper_t *s, stepper_direction_t direction);
+void stepper_step_once(stepper_t *s);
 
 
 /*! \brief De-activate all coils
