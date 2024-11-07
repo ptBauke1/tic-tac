@@ -5,7 +5,14 @@
 #include "hardware/timer.h"
 #include "pico/util/datetime.h"
 #include "hardware/rtc.h"
+#include "hardware/uart.h"
+
 #include "stepper.hpp"
+
+#define UART_ID uart0
+#define BAUD_RATE 115200
+#define UART_TX_PIN 0 // Pino TX
+#define UART_RX_PIN 1 // Pino RX
 
 #define STEPS_PER_REV 2048
 #define STEPPER_DELAY 1400 // Speed of the displays, higher = slower
@@ -38,6 +45,19 @@ uint8_t drive_step[] = {0, 0, 0}; // Current drive step for each stepper - 0 to 
 
 uint8_t uni_last = 0;
 
+void serial_communication(datetime_t *t) {
+  uart_init(UART_ID, BAUD_RATE);
+  gpio_set_function(UART_TX_PIN, GPIO_FUNC_UART);
+  gpio_set_function(UART_RX_PIN, GPIO_FUNC_UART);
+  uart_set_hw_flow(UART_ID, false, false);
+  uart_set_format(UART_ID, 8, 1, UART_PARITY_NONE);
+  uart_set_fifo_enabled(UART_ID, true);
+
+   if (uart_is_readable(UART_ID)) {
+    int received_char = uart_getc(UART_ID);
+
+}
+}
 
 void display_home(stepper_t *s){
   while(!gpio_get(s->endstop)){
@@ -47,16 +67,6 @@ void display_home(stepper_t *s){
   stepper_rotate_steps(s, starting_offset[s->index]);
   sleep_ms(10);
 }
-/*
-void step_with_rtc(stepper_t *s) {
-  rtc_get_datetime(&t);
-  uint8_t uni = t->min / 10;
-  uint8_t dec = t->min % 10;
-  uint8_t hour = t->hour % 12;
-  //125
-  if (s->index == 0)
-}
-*/
 
 // Take the specified amount of steps for a stepper connected to the specified pins, with a
 // specified delay (in microseconds) between each step.
@@ -89,7 +99,7 @@ void step_to_digit(stepper_t *s, const uint8_t digit, const unsigned int wait) {
   const uint8_t num_flaps = (s->index == 2) ? 10 : 12;
   const uint8_t num_digits = (s->index == 0) ? 12 : (s->index == 1) ? 6 : 10;
 
-  const unsigned int target_pos = starting_offset[s->index] + (unsigned int)((num_digits + digit - starting_digits[s->index]) % num_digits) * STEPS_PER_REV/num_flaps;
+  
   // The tens display has 2 full sets of digits, so we'll need to step to the closest target digit.
   if(s->index == 1) {
     // The repeated digit is offset by a half-rotation from the first target.
@@ -117,47 +127,60 @@ void set_time (datetime_t *t){
   t->sec = day_time->tm_sec;
 }
 
+void home(stepper_t *s_uni, stepper_t *s_dec, stepper_t *s_hour) {
+    display_home(&s_uni);
+    step_to_digit(&s_uni, starting_digits[stepper_uni.index], 20);
+    sleep_ms(20);
+
+    display_home(&s_dec);
+    step_to_digit(&s_dec, starting_digits[stepper_dec.index], 20);
+    sleep_ms(20);
+
+    display_home(&s_hour);
+    step_to_digit(&s_hour, starting_digits[stepper_hour.index], 20);
+    sleep_ms(20);
+}
 int main() {
     stdio_init_all();
 
+    int time;
+    scanf("%i", &time);
     char datetime_buf[256];
     char *datetime_str = &datetime_buf[0];
 
     //set_time(&t);
-    rtc_init();
+    rtc_init(); // inicialização do rtc interno do microcontrolador
     rtc_set_datetime(&t);
     
-    stepper_init(&stepper_hour, stepper_pins[0][0], stepper_pins[0][1], stepper_pins[0][2], stepper_pins[0][3], STEPS_PER_REV, stepping_mode, endstop_pins[0], 0, backward); 
-    stepper_init(&stepper_dec, stepper_pins[1][0], stepper_pins[1][1], stepper_pins[1][2], stepper_pins[1][3], STEPS_PER_REV, stepping_mode, endstop_pins[1], 1, backward); 
-    stepper_init(&stepper_uni, stepper_pins[2][0], stepper_pins[2][1], stepper_pins[2][2], stepper_pins[2][3], STEPS_PER_REV, stepping_mode, endstop_pins[2], 2, forward); 
+    // inicialização dos objetos stepper_t
+    stepper_init(&stepper_hour, stepper_pins[0][0], stepper_pins[0][1], stepper_pins[0][2], stepper_pins[0][3], STEPS_PER_REV, 
+    stepping_mode, endstop_pins[0], 0, backward); 
+    stepper_init(&stepper_dec, stepper_pins[1][0], stepper_pins[1][1], stepper_pins[1][2], stepper_pins[1][3], STEPS_PER_REV, 
+    stepping_mode, endstop_pins[1], 1, backward); 
+    stepper_init(&stepper_uni, stepper_pins[2][0], stepper_pins[2][1], stepper_pins[2][2], stepper_pins[2][3], STEPS_PER_REV, 
+    stepping_mode, endstop_pins[2], 2, forward); 
     stepper_set_speed_rpm(&stepper_hour, speed);
     stepper_set_speed_rpm(&stepper_dec, speed);
     stepper_set_speed_rpm(&stepper_uni, speed);
-    gpio_init(stepper_uni.endstop);
-    gpio_pull_down(stepper_uni.endstop);
-    gpio_set_dir(stepper_uni.endstop, GPIO_IN);
 
-    gpio_init(stepper_dec.endstop);
-    gpio_pull_down(stepper_dec.endstop);
+    // inicialização dos micro switchs
+    gpio_init(stepper_uni.endstop); // pino correspondente ao switch das unidades
+    gpio_pull_down(stepper_uni.endstop); // pino em pull dowm para garantir que a leitura seja 0 quando o switch estiver aberto
+    gpio_set_dir(stepper_uni.endstop, GPIO_IN); // inicializando o pino para receber um sinal
+
+    gpio_init(stepper_dec.endstop); // pino correspondente ao switch das dezenas
+    gpio_pull_down(stepper_dec.endstop); 
     gpio_set_dir(stepper_dec.endstop, GPIO_IN);
 
-    gpio_init(stepper_hour.endstop);
+    gpio_init(stepper_hour.endstop); // pino correspondente ao switch das horas
     gpio_pull_down(stepper_hour.endstop);
     gpio_set_dir(stepper_hour.endstop, GPIO_IN);
 
-    display_home(&stepper_uni);
-    step_to_digit(&stepper_uni, starting_digits[stepper_uni.index], 20);
-    sleep_ms(20);
-
-    display_home(&stepper_dec);
-    step_to_digit(&stepper_dec, starting_digits[stepper_dec.index], 20);
-    sleep_ms(20);
-
-    display_home(&stepper_hour);
-    step_to_digit(&stepper_hour, starting_digits[stepper_hour.index], 20);
-    sleep_ms(20);
+    // Posição inicial de cada display
+    home(stepper_uni, stepper_dec, stepper_hour);  
 
     while (true) {
+      // loop principal
       rtc_get_datetime(&t);
       uint8_t uni = t.min % 10;
       uint8_t dec = t.min / 10;
@@ -167,5 +190,5 @@ int main() {
       step_to_digit(&stepper_dec, dec, 20);
       step_to_digit(&stepper_hour, hour, 20);
       sleep_ms(20);
-}
+  }
 }

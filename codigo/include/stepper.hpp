@@ -17,7 +17,7 @@ typedef enum {
     backward = -1
 } stepper_direction_t;
 
-typedef struct {
+typedef struct {    
     int16_t position;
     uint64_t step_delay_us;
     uint32_t gpio_mask;
