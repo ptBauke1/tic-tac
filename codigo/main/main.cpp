@@ -14,7 +14,7 @@
 #define STRING_LENGTH 30     // Tamanho máximo de cada string
 
 #define STEPS_PER_REV 2048
-#define STEPPER_DELAY 1400 // Speed of the displays, higher = slower
+#define STEPPER_DELAY 1400 // velocidade dos displays, quanto menor, mais rápido
 
 
 stepper_t stepper_hour;
@@ -25,7 +25,7 @@ datetime_t rtc_time = {
   .year  = 2024,
   .month = 10,
   .day   = 23,
-  .dotw  = 3, // 0 is Sunday, so 5 is Friday
+  .dotw  = 3, // 0 é domingo, 1 é segunda, ..., 6 é sábado
   .hour  = 17,
   .min   = 58,
   .sec   = 00
@@ -37,10 +37,10 @@ const stepper_mode_t stepping_mode = power;
 uint8_t speed = 30;
 
 const uint8_t starting_digits[] = {0, 3, 1};
-const unsigned int starting_offset[] = {2, 40, 50}; //// Starting offset should be increased until the top flap touches the front stop.
+const unsigned int starting_offset[] = {2, 40, 50}; // Offset inicial para cada display
 
-unsigned int stepper_pos[] = {0,0,0}; // Position in steps of each stepper
-uint8_t drive_step[] = {0, 0, 0}; // Current drive step for each stepper - 0 to 7 for half-stepping
+unsigned int stepper_pos[] = {0,0,0}; // Posição atual de cada stepper
+uint8_t drive_step[] = {0, 0, 0}; // Passo atual de cada stepper
 
 uint8_t uni_last = 0;
 
@@ -62,40 +62,25 @@ void serial_communication() {
                 }
             }
         }
-
         // Exibe as strings recebidas
         printf("Strings recebidas:\n");
         for (int i = 0; i < STRING_COUNT; i++) {
             printf("String %d: %s\n", i + 1, strings[i]);
         }
-
         // Conversão das strings para configurar o RTC
-        
-
         // String 1: Data "YYYY-MM-DD"
         rtc_time.year = atoi(strtok(strings[0], "-"));
         rtc_time.month = atoi(strtok(NULL, "-"));
         rtc_time.day = atoi(strtok(NULL, "-"));
-
         // String 2: Hora "HH:MM:SS"
         rtc_time.hour = atoi(strtok(strings[1], ":"));
         rtc_time.min = atoi(strtok(NULL, ":"));
         rtc_time.sec = atoi(strtok(NULL, ":"));
-
         // String 3: Dia da semana (0 a 6)
         rtc_time.dotw = atoi(strings[2]);
-
         // Configura o RTC com a data e hora especificadas
         rtc_init();
         rtc_set_datetime(&rtc_time);
-
-        sleep_ms(10000);
-        printf("RTC configurado para: %04d-%02d-%02d %02d:%02d:%02d (DOTW: %d)\n",
-               rtc_time.year, rtc_time.month, rtc_time.day,
-               rtc_time.hour, rtc_time.min, rtc_time.sec, rtc_time.dotw);
-
-        // Pausa antes de uma nova leitura
-
 }
 void display_home(stepper_t *s){
   while(!gpio_get(s->endstop)){
@@ -106,8 +91,8 @@ void display_home(stepper_t *s){
   sleep_ms(10);
 }
 
-// Take the specified amount of steps for a stepper connected to the specified pins, with a
-// specified delay (in microseconds) between each step.
+// Função para mover o stepper para uma posição específica
+// A função recebe um ponteiro para o stepper, a posição desejada e o tempo de espera entre passos, em milissegundos
 void step_num(stepper_t *s, unsigned int steps, const unsigned int wait) {
   stepper_pos[s->index] = (stepper_pos[s->index] + steps) % STEPS_PER_REV;
   while(steps > 0) {
@@ -122,7 +107,7 @@ void step_to_position(stepper_t *s, unsigned int target_pos, const unsigned int 
     return;
   }
 
-  // Limit target position to between 0 and STEPS_PER_REV-1
+  // Limita a posição alvo ao intervalo de 0 a STEPS_PER_REV-1
   target_pos %= STEPS_PER_REV;
   
   if (target_pos < stepper_pos[s->index]) {
@@ -139,20 +124,20 @@ void step_to_digit(stepper_t *s, const uint8_t digit, const unsigned int wait) {
 
   const unsigned int target_pos = starting_offset[s->index] + (unsigned int)((num_digits + digit - starting_digits[s->index]) % num_digits) * STEPS_PER_REV/num_flaps;
   
-  // The tens display has 2 full sets of digits, so we'll need to step to the closest target digit.
+  // O display das dezenas tem dois conjuntos de dígitos, então é necessário fazer uma rotação de meia volta para o segundo conjunto
   if(s->index == 1) {
-    // The repeated digit is offset by a half-rotation from the first target.
+    // O segundo conjunto de dígitos começa na metade do display
     const unsigned int second_target = target_pos + STEPS_PER_REV/2;
 
-    // If the current position is between the two target positions, step to the second target position, as it's the closest given that we can't step backwards.
-    // Otherwise, step to the first target position.
+    //  Se o dígito atual for maior que o dígito alvo, é mais rápido ir para o segundo conjunto de dígitos e depois voltar
+    // Uma vez que não é possivel andar para trás no display
     if(stepper_pos[s->index] > target_pos && stepper_pos[s->index] <= second_target) {
       step_to_position(s, second_target, wait);
     } else {
       step_to_position(s, target_pos, wait);
     }
   } else {
-    // The ones and hour displays only have a single set of digits, so simply step to the target position.
+    // Os displays das unidades e das horas só tem um conjunto de dígitos
     step_to_position(s, target_pos, wait);
   }
   

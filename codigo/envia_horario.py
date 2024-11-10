@@ -1,14 +1,18 @@
 import serial
 import time
 from datetime import datetime
+import os
 
 # Configura a porta serial e a taxa de baud (ajuste 'COM3' para a porta correta)
+
+os.system("clear || cls") # Limpar a tela do terminal
+
 ser = serial.Serial('COM7', 115200, timeout=1)
 time.sleep(2)  # Aguarde a inicialização da porta serial
 
 input("Iniciar...")
 
-horario = datetime.now()
+horario = datetime.now() # Obter o horário atual
 # Dados a serem enviados
 data = f"{horario.year}-{horario.month}-{horario.day}"    # Data no formato "YYYY-MM-DD"
 hora = f"{horario.hour}:{horario.minute}:{horario.second}"      # Hora no formato "HH:MM:SS"
