@@ -9,6 +9,12 @@ Vídeo mostrando o funcionamento do projeto:
 
 https://github.com/user-attachments/assets/318ebe77-a499-42a6-96d7-d46c9cfe8bdc
 
+Imagens do projeto finalizado:
+
+![frente](https://github.com/user-attachments/assets/30ecc2d1-ab9f-4e7a-b42c-a17c184c7978)
+
+![tras](https://github.com/user-attachments/assets/7d9fee23-203a-4dab-b254-7b694ea8ef7a)
+
 # *Como usar*
 Para compilar o codigo é necessario navegar até a pasta 'codigo' e criar um diretorio build e exportar
 o caminho para seu diretorio 'pico-sdk'
