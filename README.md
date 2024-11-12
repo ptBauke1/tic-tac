@@ -45,3 +45,5 @@ O script em Python serve para mandar, via serial, o horario atualizado durante a
 
 3 - Após a execução do script, caso o projeto não esteja sendo alimentado pelo computador, é possivel desconectar o microcontrolador
 do computador.
+
+:)
